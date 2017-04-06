@@ -89,9 +89,13 @@ public class ExchangeCodec extends TelnetCodec {
     }
 
     public Object decode(Channel channel, ChannelBuffer buffer) throws IOException {
+        //获取通道buffer流的可读字节大小
         int readable = buffer.readableBytes();
+        //读取报文头header大小的字节数组
         byte[] header = new byte[Math.min(readable, HEADER_LENGTH)];
         buffer.readBytes(header);
+        
+        
         return decode(channel, buffer, readable, header);
     }
     

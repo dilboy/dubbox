@@ -93,12 +93,19 @@ final class NettyCodecAdapter {
 
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent event) throws Exception {
+            /**
+             * dubbo对netty上行流的handler封装，主要做了报文解码工作
+             */
+            //1.从event事件获取message对象
             Object o = event.getMessage();
+
+            //2.若message对象不是dubbo自身的ChannelBuffer对象，则抛出给别的处理器处理
             if (! (o instanceof ChannelBuffer)) {
                 ctx.sendUpstream(event);
                 return;
             }
 
+            //3.若获取的message对象是dubbo自身的channelBuffer对象，则读取字节流长度，若小于等于0则直接返回
             ChannelBuffer input = (ChannelBuffer) o;
             int readable = input.readableBytes();
             if (readable <= 0) {
@@ -106,22 +113,29 @@ final class NettyCodecAdapter {
             }
 
             com.alibaba.dubbo.remoting.buffer.ChannelBuffer message;
+          //4.判断当前解码器的buffer对象通道是否还可读，
             if (buffer.readable()) {
                 if (buffer instanceof DynamicChannelBuffer) {
+                  //若当前解码器的buffer流是DynamicChannelBuffer，则直接接入netty的输入流中的字节数据到当前类的buffer通道中
                     buffer.writeBytes(input.toByteBuffer());
                     message = buffer;
                 } else {
+                  //若不是DynamicChannelBuffer，则先统计当前解码器buffer可读字节和netty通道可读字节的总数
                     int size = buffer.readableBytes() + input.readableBytes();
+                  //新建一个DynamicBuffer对象，大小为当前解码器buffer可读字节+netty通道可读字节总数与当前解码器设置的buffer大小之间的较大者。
+                    //(保证现在写入的给dubbo使用的buffer流至少不小于最小的buffersize)
                     message = com.alibaba.dubbo.remoting.buffer.ChannelBuffers.dynamicBuffer(
                         size > bufferSize ? size : bufferSize);
                     message.writeBytes(buffer, buffer.readableBytes());
                     message.writeBytes(input.toByteBuffer());
                 }
             } else {
+              //若不可读，直接message等于netty event事件中message对象包装的通道流
                 message = com.alibaba.dubbo.remoting.buffer.ChannelBuffers.wrappedBuffer(
                     input.toByteBuffer());
             }
-
+            
+            //将netty上下文的通道、通道处理器和url构建成dubbo封装的NettyChannel对象
             NettyChannel channel = NettyChannel.getOrAddChannel(ctx.getChannel(), url, handler);
             Object msg;
             int saveReaderIndex;
@@ -129,6 +143,7 @@ final class NettyCodecAdapter {
             try {
                 // decode object.
                 do {
+                  //获取当前解码器buffer流的当前索引
                     saveReaderIndex = message.readerIndex();
                     try {
                         msg = codec.decode(channel, message);
